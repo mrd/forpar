@@ -32,7 +32,6 @@ import Data.Tuple
 
 --------------------------------------------------
 
-type ModuleMap     = Map ProgramUnitName ModEnv
 type NameMap       = Map String String
 
 type Renamer a     = State RenameState a -- the monad.

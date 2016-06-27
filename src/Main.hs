@@ -65,6 +65,7 @@ main = do
           where pf' = analyseBBlocks . snd . rename . analyseRenames . initAnalysis $ pf
                 bbm = genBBlockMap pf'
                 sgr = genSuperBBGr bbm
+    let runSymbols pf = genModuleMap . analyseRenames . initAnalysis $ pf
 
     case action opts of
       Lex | version `elem` [ Fortran66, Fortran77, Fortran77Extended ] ->
@@ -77,6 +78,7 @@ main = do
       Rename     -> pp . runRenamer $ parserF contents path
       BBlocks    -> putStrLn . runBBlocks $ parserF contents path
       SuperGraph -> putStrLn . runSuperGraph $ parserF contents path
+      Symbols    -> print . runSymbols $ parserF contents path
 
 superGraphDataFlow :: Data a => ProgramFile (Analysis a) -> SuperBBGr (Analysis a) -> String
 superGraphDataFlow pf sgr = showBBGr (nmap (map (fmap insLabel)) gr) ++ "\n\n" ++ replicate 50 '-' ++ "\n\n" ++ dfStr gr
@@ -117,7 +119,7 @@ printTypes tenv = do
   forM_ (M.toList tenv) $ \ (name, IDType { idVType = vt, idCType = ct }) ->
     printf "%s\t\t%s %s\n" name (drop 4 $ maybe "  -" show vt) (drop 2 $ maybe "   " show ct)
 
-data Action = Lex | Parse | Typecheck | Rename | BBlocks | SuperGraph
+data Action = Lex | Parse | Typecheck | Rename | BBlocks | SuperGraph | Symbols
 
 instance Read Action where
   readsPrec _ value =
@@ -159,6 +161,10 @@ options =
       ["bblocks"]
       (NoArg $ \ opts -> opts { action = BBlocks })
       "analyse basic blocks"
+  , Option ['s']
+      ["symbols"]
+      (NoArg $ \ opts -> opts { action = Symbols })
+      "show symbols"
   , Option ['S']
       ["supergraph"]
       (NoArg $ \ opts -> opts { action = SuperGraph })

@@ -6,6 +6,7 @@ module Language.Fortran.Analysis
   ( initAnalysis, stripAnalysis, Analysis(..), varName, genVar, puName, blockRhsExprs, rhsExprs
   , ModEnv, NameType(..), IDType(..), ConstructType(..), BaseType(..)
   , lhsExprs, isLExpr, allVars, allLhsVars, blockVarUses, blockVarDefs
+  , genSymbols, Symbols, genModuleMap, ModuleMap
   , BB, BBGr
   , TransFunc, TransFuncM )
 where
@@ -14,6 +15,7 @@ import Language.Fortran.Util.Position (SrcSpan)
 import Data.Generics.Uniplate.Data
 import Data.Generics.Uniplate.Operations
 import Data.Data
+import Data.Maybe
 import Language.Fortran.AST
 import Data.Graph.Inductive.PatriciaTree (Gr)
 import qualified Data.Map as M
@@ -42,6 +44,7 @@ type TransFunc f g a = (f (Analysis a) -> f (Analysis a)) -> g (Analysis a) -> g
 type TransFuncM m f g a = (f (Analysis a) -> m (f (Analysis a))) -> g (Analysis a) -> m (g (Analysis a))
 
 data NameType = NTSubprogram | NTVariable deriving (Show, Eq, Ord, Data, Typeable)
+type ModuleMap = M.Map ProgramUnitName ModEnv
 type ModEnv = M.Map String (String, NameType)
 
 data ConstructType =
@@ -64,6 +67,7 @@ data Analysis a = Analysis
   , insLabel       :: Maybe Int -- ^ unique number for each block during dataflow analysis
   , moduleEnv      :: Maybe ModEnv
   , idType         :: Maybe IDType
+  , symbols        :: [Name]
   }
   deriving (Data, Show, Eq)
 analysis0 a = Analysis { prevAnnotation = a
@@ -71,7 +75,8 @@ analysis0 a = Analysis { prevAnnotation = a
                        , bBlocks        = Nothing
                        , insLabel       = Nothing
                        , moduleEnv      = Nothing
-                       , idType         = Nothing }
+                       , idType         = Nothing
+                       , symbols        = [] }
 
 -- | Obtain either uniqueName or source name from an ExpValue variable.
 varName :: Expression (Analysis a) -> String
@@ -171,7 +176,34 @@ blockVarDefs (BlStatement _ _ _ st) = allLhsVars st
 blockVarDefs (BlDo _ _ _ (Just doSpec) _)  = allLhsVars doSpec
 blockVarDefs _                      = []
 
+--------------------------------------------------
+
+type Symbols = [([ProgramUnitName], Name)]
+genSymbols :: forall a. Data a => ProgramFile (Analysis a) -> Symbols
+genSymbols pf = [ ([puName pu], s) | pu <- (universeBi :: ProgramFile (Analysis a) -> [ProgramUnit (Analysis a)]) pf'
+                                   , s  <- symbols (getAnnotation pu) ]
+
+  where
+    pf' = (transformBi :: TransFunc ProgramUnit ProgramFile a) programUnit pf
+    programUnit pu@(PUModule _ _ name bs _)         = setAnnotation ((getAnnotation pu) { symbols = blockListSymbols bs }) pu
+    programUnit pu@(PUFunction _ _ _ _ _ _ _ bs _ ) = setAnnotation ((getAnnotation pu) { symbols = blockListSymbols bs }) pu
+    programUnit pu@(PUSubroutine _ _ _ _ _ bs _   ) = setAnnotation ((getAnnotation pu) { symbols = blockListSymbols bs }) pu
+    programUnit pu@(PUMain _ _ _ bs _      )        = setAnnotation ((getAnnotation pu) { symbols = blockListSymbols bs }) pu
+    programUnit pu = pu
+    blockListSymbols bs = [ v | ValVariable v <- (universeBi :: [Block (Analysis a)] -> [Value (Analysis a)]) bs ]
+
+-- (childrenBi :: Data a => ProgramFile a -> [ProgramUnit a])
+--
+--genSymbolsMap :: ProgramFile a -> SymbolsMap
+
+-- assume it has been analysed by the renamer
+genModuleMap :: forall a. Data a => ProgramFile (Analysis a) -> ModuleMap
+genModuleMap pf = M.fromList [ (puName pu, env) | pu <- (universeBi :: ProgramFile (Analysis a) -> [ProgramUnit (Analysis a)]) pf
+                                                , env <- maybeToList (moduleEnv (getAnnotation pu)) ]
+
+--------------------------------------------------
+
 -- Local variables:
 -- mode: haskell
--- haskell-program-name: "cabal repl"
+-- haskell-program-name: "stack test"
 -- End:
